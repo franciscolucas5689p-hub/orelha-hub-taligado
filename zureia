@@ -1,42 +1,42 @@
 
 -- ORELHA HUB
--- ESP + seleção de alvo para Aim Assist
+-- ESP + FOV seguindo o mouse + seleção visual de alvo
 -- Para seu próprio jogo no Roblox Studio
 
 local Players = game:GetService("Players")
 local UserInputService = game:GetService("UserInputService")
+local RunService = game:GetService("RunService")
 local Workspace = game:GetService("Workspace")
 
 local player = Players.LocalPlayer
-local gui = Instance.new("ScreenGui")
-gui.Name = "ORELHA_HUB"
-gui.ResetOnSpawn = false
-gui.Parent = player:WaitForChild("PlayerGui")
+local playerGui = player:WaitForChild("PlayerGui")
 
 local espEnabled = false
 local aimEnabled = false
 local fov = 150
-local highlights = {}
 
--- Painel
+local highlights = {}
+local connections = {}
+local currentTarget = nil
+local closed = false
+
+-- GUI
+local gui = Instance.new("ScreenGui")
+gui.Name = "ORELHA_HUB"
+gui.ResetOnSpawn = false
+gui.IgnoreGuiInset = true
+gui.Parent = playerGui
+
 local panel = Instance.new("Frame")
-panel.Size = UDim2.fromOffset(250, 220)
+panel.Size = UDim2.fromOffset(250, 245)
 panel.Position = UDim2.new(0, 30, 0.35, 0)
 panel.BackgroundColor3 = Color3.fromRGB(25, 25, 30)
+panel.BorderSizePixel = 0
 panel.Parent = gui
 
-local function button(text, y)
-    local b = Instance.new("TextButton")
-    b.Size = UDim2.new(1, -20, 0, 38)
-    b.Position = UDim2.fromOffset(10, y)
-    b.BackgroundColor3 = Color3.fromRGB(65, 45, 90)
-    b.TextColor3 = Color3.new(1, 1, 1)
-    b.Font = Enum.Font.GothamBold
-    b.TextSize = 14
-    b.Text = text
-    b.Parent = panel
-    return b
-end
+local panelCorner = Instance.new("UICorner")
+panelCorner.CornerRadius = UDim.new(0, 10)
+panelCorner.Parent = panel
 
 local title = Instance.new("TextLabel")
 title.Size = UDim2.new(1, 0, 0, 40)
@@ -47,28 +47,57 @@ title.Font = Enum.Font.GothamBold
 title.TextSize = 19
 title.Parent = panel
 
-local espButton = button("ESP: OFF", 50)
-local aimButton = button("AIM ASSIST: OFF", 95)
-local fovButton = button("FOV: 150", 140)
-local closeButton = button("FECHAR", 185)
+local function createButton(text, y)
+    local button = Instance.new("TextButton")
+    button.Size = UDim2.new(1, -20, 0, 38)
+    button.Position = UDim2.fromOffset(10, y)
+    button.BackgroundColor3 = Color3.fromRGB(65, 45, 90)
+    button.TextColor3 = Color3.new(1, 1, 1)
+    button.Font = Enum.Font.GothamBold
+    button.TextSize = 14
+    button.Text = text
+    button.Parent = panel
+
+    local corner = Instance.new("UICorner")
+    corner.CornerRadius = UDim.new(0, 7)
+    corner.Parent = button
+
+    return button
+end
+
+local espButton = createButton("ESP: OFF", 50)
+local aimButton = createButton("AIM ASSIST: OFF", 95)
+local fovButton = createButton("FOV: 150", 140)
+local closeButton = createButton("FECHAR HUB", 185)
 
 -- Círculo FOV
 local circle = Instance.new("Frame")
+circle.Name = "FOVCircle"
 circle.AnchorPoint = Vector2.new(0.5, 0.5)
-circle.Position = UDim2.fromScale(0.5, 0.5)
 circle.Size = UDim2.fromOffset(fov * 2, fov * 2)
 circle.BackgroundTransparency = 1
 circle.Visible = false
 circle.Parent = gui
 
-local round = Instance.new("UICorner")
-round.CornerRadius = UDim.new(1, 0)
-round.Parent = circle
+local circleCorner = Instance.new("UICorner")
+circleCorner.CornerRadius = UDim.new(1, 0)
+circleCorner.Parent = circle
 
-local outline = Instance.new("UIStroke")
-outline.Color = Color3.fromRGB(180, 80, 255)
-outline.Thickness = 2
-outline.Parent = circle
+local stroke = Instance.new("UIStroke")
+stroke.Color = Color3.fromRGB(180, 80, 255)
+stroke.Thickness = 2
+stroke.Parent = circle
+
+-- Status do alvo
+local status = Instance.new("TextLabel")
+status.Size = UDim2.new(1, -20, 0, 20)
+status.Position = UDim2.fromOffset(10, 225)
+status.BackgroundTransparency = 1
+status.Text = "Alvo: nenhum"
+status.TextColor3 = Color3.new(1, 1, 1)
+status.Font = Enum.Font.Gotham
+status.TextSize = 12
+status.Parent = panel
 
 -- ESP de jogadores
 local function removeESP(target)
@@ -79,22 +108,26 @@ local function removeESP(target)
 end
 
 local function addESP(target)
-    if target == player or not espEnabled then return end
+    if target == player or not espEnabled then
+        return
+    end
+
     local character = target.Character
     if not character then return end
 
     removeESP(target)
 
-    local h = Instance.new("Highlight")
-    h.Name = "OrelhaESP"
-    h.Adornee = character
-    h.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
-    h.FillColor = Color3.fromRGB(150, 50, 255)
-    h.OutlineColor = Color3.new(1, 1, 1)
-    h.FillTransparency = 0.55
-    h.Parent = gui
+    local highlight = Instance.new("Highlight")
+    highlight.Name = "OrelhaPlayerESP"
+    highlight.Adornee = character
+    highlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+    highlight.FillColor = Color3.fromRGB(150, 50, 255)
+    highlight.OutlineColor = Color3.new(1, 1, 1)
+    highlight.FillTransparency = 0.55
+    highlight.OutlineTransparency = 0
+    highlight.Parent = gui
 
-    highlights[target] = h
+    highlights[target] = highlight
 end
 
 local function refreshESP()
@@ -109,66 +142,39 @@ local function refreshESP()
     end
 end
 
-espButton.MouseButton1Click:Connect(function()
-    espEnabled = not espEnabled
-    espButton.Text = espEnabled and "ESP: ON" or "ESP: OFF"
-    refreshESP()
-end)
-
-aimButton.MouseButton1Click:Connect(function()
-    aimEnabled = not aimEnabled
-    aimButton.Text = aimEnabled and "AIM ASSIST: ON" or "AIM ASSIST: OFF"
-    circle.Visible = aimEnabled
-end)
-
-fovButton.MouseButton1Click:Connect(function()
-    fov = fov + 25
-    if fov > 400 then fov = 50 end
-    circle.Size = UDim2.fromOffset(fov * 2, fov * 2)
-    fovButton.Text = "FOV: " .. fov
-end)
-
--- Seleciona o alvo mais próximo do centro da tela.
--- O sistema de armas deve validar o disparo no servidor.
+-- Seleção visual do alvo mais próximo do cursor
 local function getAimTarget()
-    if not aimEnabled then return nil end
+    if not aimEnabled then
+        return nil
+    end
 
     local camera = Workspace.CurrentCamera
     if not camera then return nil end
 
-    local center = camera.ViewportSize / 2
+    local mousePosition = UserInputService:GetMouseLocation()
     local bestTarget = nil
     local bestDistance = fov
 
     for _, target in ipairs(Players:GetPlayers()) do
         if target ~= player then
             local character = target.Character
-            local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+            local humanoid = character
+                and character:FindFirstChildOfClass("Humanoid")
             local head = character and character:FindFirstChild("Head")
 
             if humanoid and humanoid.Health > 0 and head then
-                local pos, visible = camera:WorldToViewportPoint(head.Position)
+                local screenPosition, visible =
+                    camera:WorldToViewportPoint(head.Position)
+
                 if visible then
-                    local screenDistance =
-                        (Vector2.new(pos.X, pos.Y) - center).Magnitude
+                    local distance = (
+                        Vector2.new(screenPosition.X, screenPosition.Y)
+                        - mousePosition
+                    ).Magnitude
 
-                    if screenDistance < bestDistance then
-                        local params = RaycastParams.new()
-                        params.FilterType = Enum.RaycastFilterType.Exclude
-                        params.FilterDescendantsInstances = {player.Character}
-
-                        local origin = camera.CFrame.Position
-                        local direction = head.Position - origin
-                        local result = Workspace:Raycast(
-                            origin,
-                            direction,
-                            params
-                        )
-
-                        if result and result.Instance:IsDescendantOf(character) then
-                            bestDistance = screenDistance
-                            bestTarget = head
-                        end
+                    if distance < bestDistance then
+                        bestDistance = distance
+                        bestTarget = target
                     end
                 end
             end
@@ -178,18 +184,76 @@ local function getAimTarget()
     return bestTarget
 end
 
--- Disponibiliza a seleção para integração com o sistema de armas.
-_G.OrelhaGetAimTarget = getAimTarget
+-- Botão ESP
+espButton.MouseButton1Click:Connect(function()
+    espEnabled = not espEnabled
+    espButton.Text = espEnabled and "ESP: ON" or "ESP: OFF"
+    refreshESP()
+end)
 
+-- Botão Aim Assist
+aimButton.MouseButton1Click:Connect(function()
+    aimEnabled = not aimEnabled
+    aimButton.Text = aimEnabled
+        and "AIM ASSIST: ON"
+        or "AIM ASSIST: OFF"
+
+    circle.Visible = aimEnabled
+    currentTarget = nil
+end)
+
+-- Ajustar FOV
+fovButton.MouseButton1Click:Connect(function()
+    fov = fov + 25
+
+    if fov > 400 then
+        fov = 50
+    end
+
+    circle.Size = UDim2.fromOffset(fov * 2, fov * 2)
+    fovButton.Text = "FOV: " .. fov
+end)
+
+-- Atualização do mouse e seleção visual
+local renderConnection = RunService.RenderStepped:Connect(function()
+    if closed then return end
+
+    local mousePosition = UserInputService:GetMouseLocation()
+
+    -- O círculo acompanha o cursor
+    circle.Position = UDim2.fromOffset(
+        mousePosition.X,
+        mousePosition.Y
+    )
+
+    currentTarget = getAimTarget()
+
+    if currentTarget then
+        status.Text = "Alvo: " .. currentTarget.Name
+    else
+        status.Text = "Alvo: nenhum"
+    end
+end)
+
+-- Jogadores que entram e renascem
 local function setupPlayer(target)
     if target == player then return end
 
-    target.CharacterAdded:Connect(function()
+    if connections[target] then
+        connections[target]:Disconnect()
+    end
+
+    connections[target] = target.CharacterAdded:Connect(function()
         task.wait(0.5)
-        if espEnabled then addESP(target) end
+
+        if espEnabled then
+            addESP(target)
+        end
     end)
 
-    if espEnabled then addESP(target) end
+    if espEnabled then
+        addESP(target)
+    end
 end
 
 for _, target in ipairs(Players:GetPlayers()) do
@@ -200,11 +264,62 @@ Players.PlayerAdded:Connect(setupPlayer)
 
 Players.PlayerRemoving:Connect(function(target)
     removeESP(target)
+
+    if connections[target] then
+        connections[target]:Disconnect()
+        connections[target] = nil
+    end
+
+    if currentTarget == target then
+        currentTarget = nil
+    end
 end)
 
+-- Arrastar painel
+local dragging = false
+local dragStart
+local startPosition
+
+title.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 then
+        dragging = true
+        dragStart = input.Position
+        startPosition = panel.Position
+    end
+end)
+
+UserInputService.InputChanged:Connect(function(input)
+    if dragging and input.UserInputType == Enum.UserInputType.MouseMovement then
+        local delta = input.Position - dragStart
+
+        panel.Position = UDim2.new(
+            startPosition.X.Scale,
+            startPosition.X.Offset + delta.X,
+            startPosition.Y.Scale,
+            startPosition.Y.Offset + delta.Y
+        )
+    end
+end)
+
+UserInputService.InputEnded:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 then
+        dragging = false
+    end
+end)
+
+-- Fechar e limpar
 closeButton.MouseButton1Click:Connect(function()
+    closed = true
+    renderConnection:Disconnect()
+
+    for target, connection in pairs(connections) do
+        connection:Disconnect()
+        connections[target] = nil
+    end
+
     for target in pairs(highlights) do
         removeESP(target)
     end
+
     gui:Destroy()
 end)
